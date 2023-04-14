@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Farm", "Farm", "{52042186-66EA-4297-AB2F-FD511035A0EA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plum", "Plum\Plum.csproj", "{93A3A3F1-64BC-4231-9D00-A5B621910EEB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{93A3A3F1-64BC-4231-9D00-A5B621910EEB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93A3A3F1-64BC-4231-9D00-A5B621910EEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+EndGlobal

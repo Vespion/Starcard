@@ -1,0 +1,4 @@
+.pulumi/**/local
+.pulumi/**/local.*
+
+.cluster/
