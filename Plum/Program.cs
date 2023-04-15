@@ -135,14 +135,14 @@ return await Deployment.RunAsync(async () =>
    });
    
    //TODO Deploy vault stack
-   // var vault = new VaultModule(new ComponentResourceOptions
-   // {
-   //    DependsOn =
-   //    {
-   //       monitoring
-   //    },
-   //    Provider = kubeProvider
-   // });
+   var vault = new VaultModule(new ComponentResourceOptions
+   {
+      DependsOn =
+      {
+         monitoring
+      },
+      Provider = kubeProvider
+   });
    
    // Export outputs here
    return new Dictionary<string, object?>

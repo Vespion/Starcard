@@ -1,10 +1,8 @@
 using System.Collections.Generic;
 using Pulumi;
-using Pulumi.Crds.Certmanager.V1;
 using Pulumi.Crds.Traefik.V1Alpha1;
 using Pulumi.Kubernetes.Core.V1;
 using Pulumi.Kubernetes.Helm.V3;
-using Pulumi.Kubernetes.Types.Inputs.Certmanager.V1;
 using Pulumi.Kubernetes.Types.Inputs.Core.V1;
 using Pulumi.Kubernetes.Types.Inputs.Meta.V1;
 using Pulumi.Kubernetes.Types.Inputs.Traefik.V1Alpha1;
@@ -239,23 +237,10 @@ public class NetworkModule: ComponentModule
 		
 	}
 
-	private void DeployCertificates(Config config)
-	{
-		_ = new ClusterIssuer("http-issuer", new ClusterIssuerArgs
-		{
-			
-		}, new CustomResourceOptions
-		{
-			Parent = this
-		});
-	}
-
 	/// <inheritdoc />
 	protected override void RegisterResources(Config config)
 	{
 		var chart = DeployChart("kube-prometheus");
-		
-		// DeployCertificates(config);
 		
 		if (config.GetBoolean("Traefik/EnableDashboard") ?? false)
 		{

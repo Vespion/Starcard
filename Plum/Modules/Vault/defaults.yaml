@@ -1,0 +1,38 @@
+audit:
+  - type: file
+    path: file
+    description: "File based audit logging device"
+    options:
+      file_path: /vault/logs/vault.log
+      mode: "0640"
+
+policies:
+  - name: prometheus-operator
+    rules: |
+      path "sys/metrics" {
+        capabilities = ["list", "read"]
+      }
+  - name: admin
+    rules: |
+      path "/*" {
+        capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+      }
+
+auth:
+  - type: kubernetes
+    config:
+      kubernetes_host: https://kubernetes.default.svc.cluster.local
+    roles:
+    - name: bootstrapper
+      bound_service_account_names:
+        - vault-operator
+      bound_service_account_namespaces:
+        - storage
+      policies:
+        - admin
+      ttl: 3m
+    - name: prometheus
+      bound_service_account_names: default
+      bound_service_account_namespaces: monitoring
+      policies: prometheus-operator
+      ttl: 4h

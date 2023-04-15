@@ -1,0 +1,22 @@
+secrets:
+  - path: pki
+    type: pki
+    config:
+      default_lease_ttl: 20m
+      max_lease_ttl: 1h
+    configuration:
+      config:
+        - name: urls
+          issuing_certificates: {0}/ca
+          crl_distribution_points: {0}/crl
+          ocsp_servers: {0}/ocsp
+      roles:
+        - name: default
+          allowed_domains: {1}
+          allow_subdomains: true
+          allow_wildcard_certificates: false
+          allow_localhost: true
+          allow_any_name: false
+          enforce_hostnames: true
+          max_ttl: 1m
+          generate_lease: true

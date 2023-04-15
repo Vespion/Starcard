@@ -283,6 +283,10 @@ public class MonitoringModule: ComponentModule
 				{
 					["enabled"] = true
 				},
+				["serviceAccount"] = new Dictionary<string, object>
+					{
+						["name"] = "prometheus"
+					},
 				["prometheusSpec"] = new Dictionary<string, object>
 				{
 					["resources"] = new Dictionary<string, object>

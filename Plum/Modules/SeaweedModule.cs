@@ -3,13 +3,9 @@ using System.Text;
 using Pulumi;
 using Pulumi.Kubernetes.Batch.V1;
 using Pulumi.Kubernetes.Core.V1;
-using Pulumi.Kubernetes.Helm.V3;
-using Pulumi.Kubernetes.Networking.V1;
 using Pulumi.Kubernetes.Types.Inputs.Batch.V1;
 using Pulumi.Kubernetes.Types.Inputs.Core.V1;
-using Pulumi.Kubernetes.Types.Inputs.Helm.V3;
 using Pulumi.Kubernetes.Types.Inputs.Meta.V1;
-using Pulumi.Kubernetes.Types.Inputs.Networking.V1;
 
 namespace Plum.Modules;
 
