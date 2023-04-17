@@ -18,14 +18,47 @@ public class MonitoringModule: ComponentModule
 	/// <inheritdoc />
 	protected override void RegisterResources(Config config)
 	{
-		_isThanosDeployment = config.GetBoolean("Prometheus/UseThanos") ?? false;
+		_isThanosDeployment = config.GetBoolean("Monitoring/UseThanos") ?? false;
 		_openPorts = config.GetBoolean("Traefik/OpenPrometheusPorts") ?? false;
+		
+		var ns = new Namespace($"ns-{MonitoringNamespace}", new NamespaceArgs
+		{
+			Metadata = new ObjectMetaArgs
+			{
+				Name = MonitoringNamespace
+			}
+		}, new CustomResourceOptions
+		{
+			Parent = this
+		});
 		
 		var prometheus = InstallChart(config);
 		if (_isThanosDeployment)
 		{
 			DeployThanos(config, prometheus);
 		}
+		
+		DeployCertMonitor(prometheus);
+	}
+
+	private void DeployCertMonitor(Release prometheus)
+	{
+		var values = new InputMap<object>
+		{
+			["exposePerCertificateErrorMetrics"] = true
+		};
+		
+		_ = CreateHelmRelease(
+			"cert-monitor",
+			"x509-certificate-exporter",
+			"https://charts.enix.io",
+			MonitoringNamespace,
+			val: values,
+			deps: new Resource[] { prometheus }
+			);
+		
+		_ = CreateGrafanaDashboard("cert-monitor", MonitoringNamespace, "certificates-expiration-x509-certificate-exporter_rev3");
+		_ = CreateGrafanaDashboard("cert-manager-monitor", MonitoringNamespace, "cert-manager_rev1");
 	}
 	
 	private void DeployThanos(Config config, Release prometheusRelease)
@@ -34,25 +67,7 @@ public class MonitoringModule: ComponentModule
 		
 		DeployThanosChart(config, prometheusRelease, storageConfig);
 		
-		_ = new ConfigMap("thanos-dash-config", new ConfigMapArgs
-		{
-			Metadata = new ObjectMetaArgs
-			{
-				Namespace = prometheusRelease.Namespace,
-				Labels = new InputMap<string>
-				{
-					{ "app.kubernetes.io/name", "thanos" },
-					{ "grafana_dashboard", "1" }
-				}
-			},
-			Data = new InputMap<string>
-			{
-				{ "thanos.json", System.IO.File.ReadAllText("./Dashboards/thanos-overview-public_rev4.json") }
-			}
-		}, new CustomResourceOptions
-		{
-			Parent = this
-		});
+		CreateGrafanaDashboard("thanos", prometheusRelease.Namespace, "thanos-overview-public_rev4");
 	}
 
 	private bool _isThanosDeployment;
@@ -216,7 +231,7 @@ public class MonitoringModule: ComponentModule
 			
 			var http = (Dictionary<string, object>)query["http"];
 			
-			var ingress = NetworkModule.BuildIngressConfig(config, "metrics");
+			var ingress = BuildIngressConfig(config, "metrics", MonitoringNamespace);
 			ingress["apiVersion"] = "networking.k8s.io/v1";
 
 			http["ingress"] = ingress;
@@ -245,7 +260,7 @@ public class MonitoringModule: ComponentModule
 			},
 			["grafana"] = new Dictionary<string, object>
 			{
-				["ingress"] = NetworkModule.BuildIngressConfig(config, "grafana"),
+				["ingress"] = BuildIngressConfig(config, "grafana", MonitoringNamespace),
 				["sidecar"] = new Dictionary<string, object>
 					{
 						["enableUniqueFilenames"] = true,
@@ -343,18 +358,29 @@ public class MonitoringModule: ComponentModule
 		if (_openPorts && !_isThanosDeployment)
 		{
 			var prom = (Dictionary<string, object>)values["prometheus"];
-			var ingress = NetworkModule.BuildIngressConfig(config, "metrics");
+			var ingress = BuildIngressConfig(config, "metrics", MonitoringNamespace);
 			prom["ingress"] = ingress;
 		}
 
+		var grafana = Extract<Dictionary<string, object>>(values, "grafana");
+		var additionalDataSources = Extract<List<Dictionary<string, object>>>(grafana, "additionalDataSources");
+		additionalDataSources.Add(new Dictionary<string, object>
+		{
+			["name"] = "Loki",
+			["ui"] = "loki",
+			["type"] = "loki",
+			["url"] = $"http://loki-gateway.{MonitoringNamespace}.svc.cluster.local",
+			["isDefault"] = false
+		});
+		
 		if (_isThanosDeployment)
 		{
 			Log.Info("Configuring Thanos deployment");
 
 			var prometheus = Extract<Dictionary<string, object>>(values, "prometheus");
 			var prometheusSpec = Extract<Dictionary<string, object>>(prometheus, "prometheusSpec");
-			prometheusSpec["replicas"] = config.GetInt32("Prometheus/Replicas") ?? 1;
-			prometheusSpec["shards"] = config.GetInt32("Prometheus/Shards") ?? 1;
+			prometheusSpec["replicas"] = config.GetInt32("Monitoring/Replicas") ?? 1;
+			prometheusSpec["shards"] = config.GetInt32("Monitoring/Shards") ?? 1;
 
 			prometheusSpec["thanos"] = new Dictionary<string, object>
 			{
@@ -365,12 +391,10 @@ public class MonitoringModule: ComponentModule
 				}
 			};
 			
-			var grafana = Extract<Dictionary<string, object>>(values, "grafana");
 			var grafanaSidecar = Extract<Dictionary<string, object>>(grafana, "sidecar");
 			var datasourcesSidecar = Extract<Dictionary<string, object>>(grafanaSidecar, "datasources");
 			datasourcesSidecar["defaultDatasourceEnabled"] = false;
-
-			var additionalDataSources = Extract<List<Dictionary<string, object>>>(grafana, "additionalDataSources");
+			
 			additionalDataSources.Add(new Dictionary<string, object>
 			{
 				["name"] = "Thanos",
@@ -393,7 +417,6 @@ public class MonitoringModule: ComponentModule
 			MonitoringNamespace,
 			"45.9.1",
 			val: values
-			//,skipAwait: true //The release depends on resources further down the pipe so skip waiting for a ready status
 		);
 
 		return release;

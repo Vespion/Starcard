@@ -51,64 +51,74 @@ public class SeaweedModule: ComponentModule
 		});
 
 
-		_ = new Job("init-thanos-container", new JobArgs
+		Job ProvisionBucket(string name, string ns = StorageNamespace)
 		{
-			Metadata = new ObjectMetaArgs
+			return new Job($"provision-bucket-{name}", new JobArgs
 			{
-				Name = "init-thanos-container",
-				Namespace = StorageNamespace
-			},
-			Spec = new JobSpecArgs
-			{
-				// Job can't be deleted as it would break pulumi's state
-				// TtlSecondsAfterFinished = 120, 
-				Template = new PodTemplateSpecArgs
+				Metadata = new ObjectMetaArgs
 				{
-					Spec = new PodSpecArgs
+					Name = $"provision-bucket-{name}",
+					Namespace = ns
+				},
+				Spec = new JobSpecArgs
+				{
+					BackoffLimit = 12,
+					// Job can't be deleted as it would break pulumi's state
+					// TtlSecondsAfterFinished = 120, 
+					Template = new PodTemplateSpecArgs
 					{
-						RestartPolicy = "OnFailure",
-						Containers = new ContainerArgs[]
+						Spec = new PodSpecArgs
 						{
-							new()
+							RestartPolicy = "OnFailure",
+							Containers = new ContainerArgs[]
 							{
-								Image = "d3fk/s3cmd:arch-stable",
-								Name = "s3cmd",
-								Args = new InputList<string>
+								new()
 								{
-									"--debug",
-									"mb",
-									"s3://thanos"
-								},
-								VolumeMounts = new VolumeMountArgs[]
-								{
-									new()
+									Image = "d3fk/s3cmd:arch-stable",
+									Name = $"provision-bucket-{name}",
+									Args = new InputList<string>
 									{
-										MountPath = "/root/.s3cfg",
-										SubPath = ".s3cfg",
-										Name = "config",
-										ReadOnly = true
+										"--debug",
+										"mb",
+										$"s3://{name}"
+									},
+									VolumeMounts = new VolumeMountArgs[]
+									{
+										new()
+										{
+											MountPath = "/root/.s3cfg",
+											SubPath = ".s3cfg",
+											Name = "config",
+											ReadOnly = true
+										}
 									}
 								}
-							}
-						},
-						Volumes = new VolumeArgs[]
-						{
-							new()
+							},
+							Volumes = new VolumeArgs[]
 							{
-								Name = "config",
-								ConfigMap = new ConfigMapVolumeSourceArgs
+								new()
 								{
-									Name = configMap.Metadata.Apply(x => x.Name)
+									Name = "config",
+									ConfigMap = new ConfigMapVolumeSourceArgs
+									{
+										Name = configMap.Metadata.Apply(x => x.Name)
+									}
 								}
 							}
 						}
 					}
 				}
-			}
-		}, new CustomResourceOptions
-		{
-			Parent = this
-		});
+			}, new CustomResourceOptions
+			{
+				Parent = this
+			});
+		}
+
+		ProvisionBucket("thanos");
+		// ProvisionBucket("loki-chunks"); //Provisioned by loki
+		ProvisionBucket("loki-ruler");
+		ProvisionBucket("loki-admin");
+		ProvisionBucket("loki-index");
 	}
 	
 	private void DeployChart(Config config, string name = "seaweed", bool monitoring = true, bool reuseValues = false, params Resource[] deps)

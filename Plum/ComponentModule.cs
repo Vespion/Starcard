@@ -1,6 +1,14 @@
+using System;
+using System.Collections.Generic;
+using Plum.Modules;
 using Pulumi;
+using Pulumi.Crds.Certmanager.V1;
+using Pulumi.Kubernetes.Core.V1;
 using Pulumi.Kubernetes.Helm.V3;
+using Pulumi.Kubernetes.Types.Inputs.Certmanager.V1;
+using Pulumi.Kubernetes.Types.Inputs.Core.V1;
 using Pulumi.Kubernetes.Types.Inputs.Helm.V3;
+using Pulumi.Kubernetes.Types.Inputs.Meta.V1;
 
 namespace Plum;
 
@@ -17,7 +25,7 @@ public abstract class ComponentModule : ComponentResource
 	/// <summary>
 	/// Designed for networking and communication resources.
 	/// </summary>
-	protected const string NetworkNamespace = "comms";
+	protected internal const string NetworkNamespace = "comms";
 	/// <summary>
 	/// Designed for resources that manage metrics, logs and other telemetry.
 	/// </summary>
@@ -63,12 +71,104 @@ public abstract class ComponentModule : ComponentResource
 			Name = releaseName,
 			Namespace = ns,
 			CreateNamespace = true,
-			Atomic = true,
 			CleanupOnFail = true,
 			SkipAwait = skipAwait,
 			WaitForJobs = true,
 			Values = val ?? new InputMap<object>(),
 			ReuseValues = reuseValues
 		};
+	}
+
+	protected Dictionary<string, object> BuildIngressConfig(Config config, string subdomain, string ns,
+		string entrypoint = "websecure",
+		bool host = true)
+	{
+		var fullDomain = $"{subdomain}.{config.Require("DomainSuffix")}";
+
+		var cert = BuildCertificate(config, subdomain, ns);
+		
+		var vals = new Dictionary<string, object>
+		{
+			["enabled"] = true,
+			["hosts"] = new[] { fullDomain },
+			["annotations"] = new Dictionary<string, string>
+			{
+				["traefik.ingress.kubernetes.io/router.entrypoints"] = entrypoint
+			},
+			["tls"] = new Dictionary<string, object>[]
+			{
+				new()
+				{
+					["secretName"] = cert.Spec.Apply(x => x.SecretName),
+					["hosts"] = Array.Empty<object>()
+				}
+			}
+		};
+
+		if (host)
+		{
+			vals["host"] = fullDomain;
+		}
+
+		return vals;
+	}
+
+	protected ConfigMap CreateGrafanaDashboard(string name, Input<string> ns, Input<string> fileName)
+	{
+		return new ConfigMap($"{name}-dash-config", new ConfigMapArgs
+		{
+			Metadata = new ObjectMetaArgs
+			{
+				Namespace = ns,
+				Labels = new InputMap<string>
+				{
+					{ "grafana_dashboard", "1" }
+				}
+			},
+			Data = new InputMap<string>
+			{
+				{ $"{name}.json", fileName.Apply(x => System.IO.File.ReadAllText($"./Dashboards/{x}.json")) }
+			}
+		}, new CustomResourceOptions
+		{
+			Parent = this
+		});
+	}
+	
+	protected Certificate BuildCertificate(Config config, string subdomain, string ns)
+	{
+		var domain = $"{subdomain}.{config.Require("DomainSuffix")}";
+		return new Certificate($"{subdomain}-ingress-tls", new CertificateArgs
+		{
+			Metadata = new ObjectMetaArgs
+			{
+				Name = subdomain,
+				Namespace = ns
+			},
+			Spec = new CertificateSpecArgs
+			{
+				SecretName = $"{domain}-ingress-tls",
+				DnsNames = new InputList<string>
+				{
+					domain
+				},
+				IsCA = false,
+				Usages = new []
+				{
+					"server auth",
+					"client auth"
+				},
+				Duration = "2h",
+				RenewBefore = "1h",
+				IssuerRef = new CertificateSpecIssuerrefArgs
+				{
+					Name = CertManagerModule.WebIssuer,
+					Kind = "ClusterIssuer"
+				}
+			}
+		}, new CustomResourceOptions
+		{
+			Parent = this
+		});
 	}
 }

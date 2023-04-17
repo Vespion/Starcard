@@ -3,8 +3,9 @@ audit:
     path: file
     description: "File based audit logging device"
     options:
-      file_path: /vault/logs/vault.log
-      mode: "0640"
+      file_path: stdout
+#      file_path: /vault/logs/vault.log
+#      mode: "0640"
 
 policies:
   - name: prometheus-operator
@@ -17,6 +18,12 @@ policies:
       path "/*" {
         capabilities = ["create", "read", "update", "delete", "list", "sudo"]
       }
+  - name: allow_pki
+    rules: |
+      path "pki/*" {
+        capabilities = ["create", "read", "update", "delete", "list"]
+      }
+  
 
 auth:
   - type: kubernetes
@@ -32,7 +39,18 @@ auth:
         - admin
       ttl: 3m
     - name: prometheus
-      bound_service_account_names: default
-      bound_service_account_namespaces: monitoring
-      policies: prometheus-operator
+      bound_service_account_names:
+        - default
+      bound_service_account_namespaces:
+        - monitoring
+      policies:
+        - prometheus-operator
       ttl: 4h
+    - name: cert-manager
+      bound_service_account_names:
+        - cert-manager
+      bound_service_account_namespaces:
+        - comms
+      policies:
+        - allow_pki
+      ttl: 1h

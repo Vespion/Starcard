@@ -5,11 +5,13 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Pulumi;
+using Pulumi.Crds.Certmanager.V1;
 using Pulumi.Kubernetes.Batch.V1;
 using Pulumi.Kubernetes.Core.V1;
 using Pulumi.Kubernetes.Helm.V3;
 using Pulumi.Kubernetes.Rbac.V1;
 using Pulumi.Kubernetes.Types.Inputs.Batch.V1;
+using Pulumi.Kubernetes.Types.Inputs.Certmanager.V1;
 using Pulumi.Kubernetes.Types.Inputs.Core.V1;
 using Pulumi.Kubernetes.Types.Inputs.Meta.V1;
 using Pulumi.Kubernetes.Types.Inputs.Rbac.V1;
@@ -29,6 +31,17 @@ public class VaultModule: ComponentModule
 	/// <inheritdoc />
 	protected override void RegisterResources(Config config)
 	{
+		var ns = new Namespace($"ns-{Namespace}", new NamespaceArgs
+		{
+			Metadata = new ObjectMetaArgs
+			{
+				Name = Namespace
+			}
+		}, new CustomResourceOptions
+		{
+			Parent = this
+		});
+		
 		var saBinding = new ClusterRoleBinding("vault-auth-delegator", new ClusterRoleBindingArgs
 		{
 			RoleRef = new RoleRefArgs
@@ -172,48 +185,167 @@ public class VaultModule: ComponentModule
 	
 	private Pulumi.Crds.Vault.V1Alpha1.Vault DeployVault(Release operatorChart, Config config, InputList<Resource> args)
 	{
-		return new Pulumi.Crds.Vault.V1Alpha1.Vault("vault", new VaultArgs
+		var spec = new VaultSpecArgs
 		{
-			Metadata = new ObjectMetaArgs
+			Size = 3,
+			ServiceAccount = operatorChart.ResourceNames.Apply(x => x["ServiceAccount/v1"][0]),
+			IstioEnabled = false,
+			UnsealConfig = new VaultSpecUnsealconfigArgs
 			{
-				Name = "vault",
-				Namespace = operatorChart.Namespace.Apply(x => x)
-			},
-			Spec = new VaultSpecArgs
-			{
-				Size = 3,
-				ServiceAccount = operatorChart.ResourceNames.Apply(x => x["ServiceAccount/v1"][0]),
-				IstioEnabled = false,
-				Ingress = ((config.GetBoolean("Traefik/OpenVaultPorts") ?? false) == false ? null : new VaultSpecIngressArgs
+				Kubernetes = new VaultSpecUnsealconfigKubernetesArgs
 				{
-					Annotations = new InputMap<string>
+					SecretNamespace = operatorChart.Namespace.Apply(x => x),
+					SecretName = "vault-unseal-keys"
+				}
+			},
+			Config = new InputMap<object>
+			{
+				// ReSharper disable once StringLiteralTypo
+				{ "disable_mlock", true },
+				{
+					"storage", new InputMap<object>
 					{
-						{"traefik.ingress.kubernetes.io/router.entrypoints", "web"}
-					},
-					Spec = new VaultSpecIngressSpecArgs
-					{
-						Rules = new []
 						{
-							new VaultSpecIngressSpecRulesArgs
+							"raft", new InputMap<object>
 							{
-								Host = $"vault.{config.Require("DomainSuffix")}",
-								Http = new VaultSpecIngressSpecRulesHttpArgs
+								{ "path", "/vault/data" },
+								{ "ha_enabled", true }
+							}
+						}
+					}
+				},
+				{ "cluster_addr", "https://${.Env.POD_NAME}:8201" },
+				{
+					"api_addr",
+					Output.Format($"https://${{.Env.POD_NAME}}.{operatorChart.Namespace}.svc.cluster.local:8200")
+				},
+				{
+					"listener", new InputMap<object>
+					{
+						{
+							"tcp", new InputMap<object>
+							{
+								{ "address", "0.0.0.0:8200" },
+								{ "tls_disable", true },
+								{ "cluster_address", "0.0.0.0:8201" },
 								{
-									Paths = new []
+									"telemetry", new InputMap<object>
 									{
-										new VaultSpecIngressSpecRulesHttpPathsArgs
+										{ "unauthenticated_metrics_access", true }
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"telemetry", new InputMap<object>
+					{
+						{ "prometheus_retention_time", "30s" },
+						{ "disable_hostname", true }
+					}
+				},
+				// {"service_registration", new InputMap<object>
+				// 	{
+				// 		{"kubernetes", new InputMap<object>()}
+				// 	}
+				// },
+				{ "ui", config.GetBoolean("Traefik/OpenVaultPorts") ?? false }
+			},
+			ExternalConfig = new InputMap<object>
+			{
+				{
+					"purgeUnmanagedConfig", new InputMap<object>
+					{
+						{ "enabled", false }
+					}
+				}
+			},
+			VaultEnvsConfig = new VaultSpecVaultenvsconfigArgs[]
+			{
+				new()
+				{
+					Name = "VAULT_LOG_LEVEL",
+					Value = "debug"
+				}
+			},
+			ServiceRegistrationEnabled = true,
+			StatsdDisabled = true,
+			ServiceMonitorEnabled = true,
+			// FluentdEnabled = true,
+			// FluentdConfig = 
+			VolumeMounts = new[]
+			{
+				new VaultSpecVolumemountsArgs
+				{
+					Name = "vault-raft",
+					MountPath = "/vault/data"
+				}
+			},
+			VolumeClaimTemplates = new[]
+			{
+				new VaultSpecVolumeclaimtemplatesArgs
+				{
+					Metadata = new VaultSpecVolumeclaimtemplatesMetadataArgs
+					{
+						Name = "vault-raft"
+					},
+					Spec = new VaultSpecVolumeclaimtemplatesSpecArgs
+					{
+						AccessModes = new[] { "ReadWriteOnce" },
+						VolumeMode = "Filesystem",
+						Resources = new VaultSpecVolumeclaimtemplatesSpecResourcesArgs
+						{
+							Requests = new InputMap<Union<int, string>>
+							{
+								{ "storage", "1Gi" }
+							}
+						},
+					}
+				}
+			}
+		};
+
+		if (config.GetBoolean("Traefik/OpenVaultPorts") ?? false)
+		{
+			var cert = BuildCertificate(config, "vault", Namespace);
+
+			spec.Ingress = new VaultSpecIngressArgs
+			{
+				Annotations = new InputMap<string>
+				{
+					["traefik.ingress.kubernetes.io/router.entrypoints"] = "websecure"
+				},
+				Spec = new VaultSpecIngressSpecArgs
+				{
+					Tls = new VaultSpecIngressSpecTlsArgs[]
+					{
+						new()
+						{
+							SecretName = cert.Spec.Apply(x => x.SecretName)
+						}
+					},
+					Rules = new[]
+					{
+						new VaultSpecIngressSpecRulesArgs
+						{
+							Host = $"vault.{config.Require("DomainSuffix")}",
+							Http = new VaultSpecIngressSpecRulesHttpArgs
+							{
+								Paths = new[]
+								{
+									new VaultSpecIngressSpecRulesHttpPathsArgs
+									{
+										Path = "/",
+										PathType = "Prefix",
+										Backend = new VaultSpecIngressSpecRulesHttpPathsBackendArgs
 										{
-											Path = "/",
-											PathType = "Prefix",
-											Backend = new VaultSpecIngressSpecRulesHttpPathsBackendArgs
+											Service = new VaultSpecIngressSpecRulesHttpPathsBackendServiceArgs
 											{
-												Service = new VaultSpecIngressSpecRulesHttpPathsBackendServiceArgs
+												Name = "vault",
+												Port = new VaultSpecIngressSpecRulesHttpPathsBackendServicePortArgs
 												{
-													Name = "vault",
-													Port = new VaultSpecIngressSpecRulesHttpPathsBackendServicePortArgs
-													{
-														Number = 8200
-													}
+													Number = 8200
 												}
 											}
 										}
@@ -222,111 +354,18 @@ public class VaultModule: ComponentModule
 							}
 						}
 					}
-				})!,
-				UnsealConfig = new VaultSpecUnsealconfigArgs
-				{
-					Kubernetes = new VaultSpecUnsealconfigKubernetesArgs
-					{
-						SecretNamespace = operatorChart.Namespace.Apply(x => x),
-						SecretName = "vault-unseal-keys"
-					}
-				},
-				Config = new InputMap<object>
-				{
-					// ReSharper disable once StringLiteralTypo
-					{"disable_mlock", true},
-					{"storage", new InputMap<object>
-						{
-							{"raft", new InputMap<object>
-								{
-									{"path", "/vault/data"},
-									{"ha_enabled", true}
-								}
-							}
-						}
-					},
-					{"cluster_addr", "https://${.Env.POD_NAME}:8201"},
-					{"api_addr", Output.Format($"https://${{.Env.POD_NAME}}.{operatorChart.Namespace}.svc.cluster.local:8200")},
-					{"listener", new InputMap<object>
-						{
-							{"tcp", new InputMap<object>
-								{
-									{"address", "0.0.0.0:8200"},
-									{"tls_disable", true},
-									{"cluster_address", "0.0.0.0:8201"},
-									{"telemetry", new InputMap<object>
-										{
-											{"unauthenticated_metrics_access", true}
-										}
-									}
-								}
-							}
-						}
-					},
-					{"telemetry", new InputMap<object>
-						{
-							{"prometheus_retention_time", "30s"},
-							{"disable_hostname", true}
-						}
-					},
-					// {"service_registration", new InputMap<object>
-					// 	{
-					// 		{"kubernetes", new InputMap<object>()}
-					// 	}
-					// },
-					{"ui", config.GetBoolean("Traefik/OpenVaultPorts") ?? false}
-				},
-				ExternalConfig = new InputMap<object>
-				{
-					{"purgeUnmanagedConfig", new InputMap<object>
-					{
-						{"enabled", false}
-					}}
-				},
-				VaultEnvsConfig = new VaultSpecVaultenvsconfigArgs[]
-				{
-					new()
-					{
-						Name = "VAULT_LOG_LEVEL",
-						Value = "debug"
-					}
-				},
-				ServiceRegistrationEnabled = true,
-				StatsdDisabled = true,
-				ServiceMonitorEnabled = true,
-				// FluentdEnabled = true,
-				// FluentdConfig = 
-				VolumeMounts = new []
-				{
-					new VaultSpecVolumemountsArgs
-					{
-						Name = "vault-raft",
-						MountPath = "/vault/data"
-					}
-				},
-				VolumeClaimTemplates = new []
-				{
-					new VaultSpecVolumeclaimtemplatesArgs
-					{
-						Metadata = new VaultSpecVolumeclaimtemplatesMetadataArgs
-						{
-							Name = "vault-raft"
-						},
-						Spec = new VaultSpecVolumeclaimtemplatesSpecArgs
-						{
-							AccessModes = new []{"ReadWriteOnce"},
-							VolumeMode = "Filesystem",
-							Resources = new VaultSpecVolumeclaimtemplatesSpecResourcesArgs
-							{
-								Requests = new InputMap<Union<int, string>>
-								{
-									{"storage", "1Gi"}
-								}
-							},
-						}
-					}
 				}
-			}
+			}!;
+		}
+		
+		return new Pulumi.Crds.Vault.V1Alpha1.Vault("vault", new VaultArgs
+		{
+			Metadata = new ObjectMetaArgs
+			{
+				Name = "vault",
+				Namespace = operatorChart.Namespace.Apply(x => x)
+			},
+			Spec = spec
 		}, new CustomResourceOptions
 		{
 			Parent = this,

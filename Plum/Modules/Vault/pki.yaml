@@ -18,5 +18,6 @@ secrets:
           allow_localhost: true
           allow_any_name: false
           enforce_hostnames: true
-          max_ttl: 1m
-          generate_lease: true
+          max_ttl: 5h
+          generate_lease: false
+          require_cn: false

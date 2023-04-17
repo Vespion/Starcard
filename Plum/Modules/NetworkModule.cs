@@ -11,25 +11,22 @@ namespace Plum;
 
 public class NetworkModule: ComponentModule
 {
-	internal static Dictionary<string, object> BuildIngressConfig(Config config, string subdomain, string entrypoint = "web")
-	{
-		var fullDomain = $"{subdomain}.{config.Require("DomainSuffix")}";
-		return new Dictionary<string, object>
-		{
-			["enabled"] = true,
-			["hosts"] = new[] { fullDomain },
-			["host"] = fullDomain,
-			["annotations"] = new Dictionary<string, string>
-			{
-				["traefik.ingress.kubernetes.io/router.entrypoints"] = entrypoint
-			}
-		};
-	}
-	
-	Release DeployChart(Input<string> prometheusLabel)
+	Release DeployChart(Config config)
 	{
 		var values = new Dictionary<string, object>
 		{
+			["ports"] = new Dictionary<string, object>
+			{ 
+				["web"] = new Dictionary<string, object>
+				{
+					["redirectTo"] = "websecure",
+					["exposedPort"] = config.RequireInt32("Traefik/Ports/Http")
+				},
+				["websecure"] = new Dictionary<string, object>
+				{
+					["exposedPort"] = config.RequireInt32("Traefik/Ports/Https")
+				}
+			},
 			["priorityClassName"] = "system-cluster-critical",
 			["podDisruptionBudget"] = new Dictionary<string, object>
 			{
@@ -74,7 +71,7 @@ public class NetworkModule: ComponentModule
 					{
 						["additionalLabels"] = new InputMap<string>
 							{
-								{"release", prometheusLabel}
+								{"release", "kube-prometheus"}
 							},
 						["jobLabel"] = "traefik",
 						["interval"] = "30s",
@@ -172,6 +169,8 @@ public class NetworkModule: ComponentModule
 	
 	private void ExposeDashboard(Config config, Release chart)
 	{
+		var cert = BuildCertificate(config, "traefik", NetworkNamespace);
+		
 		var manifest = new IngressRoute("traefik-dashboard", new IngressRouteArgs
 		{
 			Metadata = new ObjectMetaArgs
@@ -183,7 +182,11 @@ public class NetworkModule: ComponentModule
 			{
 				EntryPoints = new []
 				{
-					"web"
+					"websecure"
+				},
+				Tls = new IngressRouteSpecTlsArgs
+				{
+					SecretName = cert.Spec.Apply(x => x.SecretName)
 				},
 				Routes = new []
 				{
@@ -207,29 +210,6 @@ public class NetworkModule: ComponentModule
 			Parent = this
 		});
 	}
-
-	private void InstallGrafanaDashboard(Release chart)
-	{
-		_ = new ConfigMap("traefik-dash-config", new ConfigMapArgs
-		{
-			Metadata = new ObjectMetaArgs
-			{
-				Namespace = chart.Namespace,
-				Labels = new InputMap<string>
-				{
-					{ "app.kubernetes.io/name", "traefik" },
-					{ "grafana_dashboard", "1" }
-				}
-			},
-			Data = new InputMap<string>
-			{
-				{ "traefik.json", System.IO.File.ReadAllText("./Dashboards/traefik-official-kubernetes-dashboard_rev7.json") }
-			}
-		}, new CustomResourceOptions
-		{
-			Parent = this
-		});
-	}
 	
 	/// <inheritdoc />
 	public NetworkModule(ComponentResourceOptions options) : base("network", options)
@@ -240,13 +220,14 @@ public class NetworkModule: ComponentModule
 	/// <inheritdoc />
 	protected override void RegisterResources(Config config)
 	{
-		var chart = DeployChart("kube-prometheus");
+		var chart = DeployChart(config);
 		
 		if (config.GetBoolean("Traefik/EnableDashboard") ?? false)
 		{
 			ExposeDashboard(config, chart);
 		}
 		
-		InstallGrafanaDashboard(chart);
+		CreateGrafanaDashboard("traefik", chart.Namespace, "traefik-official-kubernetes-dashboard_rev7");
+
 	}
 }
