@@ -21,6 +21,7 @@
   <ItemGroup>
     <Folder Include="Dashboards" />
     <None Include=".cluster/**/*" />
+    <None Include=".pulumi/**/*" />
   </ItemGroup>
 
 </Project>

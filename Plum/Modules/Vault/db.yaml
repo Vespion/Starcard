@@ -1,0 +1,18 @@
+secrets:
+  - type: database
+    description: Postgres Database secret engine.
+    configuration:
+      config:
+        - name: orleans
+          plugin_name: "postgresql-database-plugin"
+          connection_url: "postgresql://{{username}}:{{password}}@orleans-rw:5432/orleans"
+          allowed_roles: [rancher]
+          username: "vault" # Example how to read environment variables
+          password: "bootstrapper-password-rotate-me-!!"
+      roles:
+        - name: rancher
+          db_name: orleans
+          creation_statements: "CREATE USER \"{{name}}\" WITH ENCRYPTED PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \"{{name}}\";"
+          revocation_statements: "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM \"{{name}}\"; DROP OWNED BY \"{{name}}\"; DROP ROLE \"{{name}}\";"
+          default_ttl: "10m"
+          max_ttl: "2h"

@@ -12,6 +12,7 @@ namespace Plum.Modules;
 public class CertManagerModule: ComponentModule
 {
 	public const string WebIssuer = "web-issuer";
+	public const string DbIssuer = "db-issuer";
 
 	/// <inheritdoc />
 	public CertManagerModule(ComponentResourceOptions? options = null) : base("cert-manager", options)
@@ -19,7 +20,7 @@ public class CertManagerModule: ComponentModule
 		
 	}
 
-	private void DeployWebIssuer(Release certManager)
+	private void DeployIssuers(Release certManager)
 	{
 		var saToken = new Secret("cert-manager-sa-token", new SecretArgs
 		{
@@ -40,42 +41,48 @@ public class CertManagerModule: ComponentModule
 			},
 			Parent = this
 		});
-		
-		_ = new ClusterIssuer(WebIssuer, new ClusterIssuerArgs
+
+		ClusterIssuer DeployIssuer(string role, string name)
 		{
-			Metadata = new ObjectMetaArgs
+			return new ClusterIssuer(name, new ClusterIssuerArgs
 			{
-				Name = WebIssuer,
-				Namespace = NetworkNamespace
-			},
-			Spec = new ClusterIssuerSpecArgs
-			{
-				Vault = new ClusterIssuerSpecVaultArgs
+				Metadata = new ObjectMetaArgs
 				{
-					Server = $"http://vault.{StorageNamespace}.svc.cluster.local:8200",
-					Path = "pki/sign/default",
-					Auth = new ClusterIssuerSpecVaultAuthArgs
+					Name = name,
+					Namespace = NetworkNamespace
+				},
+				Spec = new ClusterIssuerSpecArgs
+				{
+					Vault = new ClusterIssuerSpecVaultArgs
 					{
-						Kubernetes = new ClusterIssuerSpecVaultAuthKubernetesArgs
+						Server = $"http://vault.{StorageNamespace}.svc.cluster.local:8200",
+						Path = $"pki/sign/{role}",
+						Auth = new ClusterIssuerSpecVaultAuthArgs
 						{
-							Role = "cert-manager",
-							SecretRef = new ClusterIssuerSpecVaultAuthKubernetesSecretrefArgs
+							Kubernetes = new ClusterIssuerSpecVaultAuthKubernetesArgs
 							{
-								Name = saToken.Metadata.Apply(x => x.Name),
-								Key = "token"
+								Role = "cert-manager",
+								SecretRef = new ClusterIssuerSpecVaultAuthKubernetesSecretrefArgs
+								{
+									Name = saToken!.Metadata.Apply(x => x.Name),
+									Key = "token"
+								}
 							}
 						}
 					}
 				}
-			}
-		}, new CustomResourceOptions
-		{
-			DependsOn =
+			}, new CustomResourceOptions
 			{
-				certManager
-			},
-			Parent = this
-		});
+				DependsOn =
+				{
+					certManager
+				},
+				Parent = this
+			});
+		}
+
+		_ = DeployIssuer("web", WebIssuer);
+		_ = DeployIssuer("db", DbIssuer);
 	}
 	
 	/// <inheritdoc />
@@ -83,7 +90,7 @@ public class CertManagerModule: ComponentModule
 	{
 		var release = DeployChart();
 		
-		DeployWebIssuer(release);
+		DeployIssuers(release);
 	}
 
 	private Release DeployChart()

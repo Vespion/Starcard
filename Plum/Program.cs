@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Plum;
 using Plum.Modules;
+using Plum.Modules.Databases;
 using Pulumi;
 using Pulumi.Command.Local;
 using Pulumi.Crds.Monitoring.V1;
@@ -29,8 +30,15 @@ Provider CreateKubeProvider(Config config)
                "--agents 3 --k3s-arg \"--disable=traefik@server:*\" " +
                $"-p {config.RequireInt32("Traefik/Ports/Http")}:{config.RequireInt32("Traefik/Ports/Http")}@loadbalancer " +
                $"-p {config.RequireInt32("Traefik/Ports/Https")}:{config.RequireInt32("Traefik/Ports/Https")}@loadbalancer " +
+               $"-p {config.RequireInt32("Traefik/Ports/Orleans")}:{config.RequireInt32("Traefik/Ports/Orleans")}@loadbalancer " +
                $"--volume \"{store}:/var/lib/rancher/k3s/storage@all\" ",
             Delete = "k3d cluster delete starcard"
+         }, new CustomResourceOptions
+         {
+            IgnoreChanges =
+            {
+               "create"
+            }
          });
 
          var nodeConfig = new Command("export-k3d-config", new CommandArgs
@@ -212,8 +220,17 @@ return await Deployment.RunAsync(async () =>
       },
       Provider = kubeProvider
    });
-   
-   //TODO Deploy databases
+
+   var db = new DatabaseModule(new ComponentResourceOptions
+   {
+      Provider = kubeProvider,
+      DependsOn =
+      {
+         certManager,
+         monitoring,
+         network
+      }
+   });
    
    //TODO Deploy apps
    

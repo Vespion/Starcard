@@ -81,7 +81,8 @@ public abstract class ComponentModule : ComponentResource
 
 	protected Dictionary<string, object> BuildIngressConfig(Config config, string subdomain, string ns,
 		string entrypoint = "websecure",
-		bool host = true)
+		bool enabled = true,
+		bool host = true, string? className = null)
 	{
 		var fullDomain = $"{subdomain}.{config.Require("DomainSuffix")}";
 
@@ -89,8 +90,9 @@ public abstract class ComponentModule : ComponentResource
 		
 		var vals = new Dictionary<string, object>
 		{
-			["enabled"] = true,
+			["enabled"] = enabled,
 			["hosts"] = new[] { fullDomain },
+			["className"] = null!,
 			["annotations"] = new Dictionary<string, string>
 			{
 				["traefik.ingress.kubernetes.io/router.entrypoints"] = entrypoint
@@ -160,6 +162,13 @@ public abstract class ComponentModule : ComponentResource
 				},
 				Duration = "2h",
 				RenewBefore = "1h",
+				PrivateKey = new CertificateSpecPrivatekeyArgs
+				{
+					RotationPolicy = "Always",
+					Size = 521,
+					Algorithm = "ECDSA",
+					Encoding = "PKCS1"
+				},
 				IssuerRef = new CertificateSpecIssuerrefArgs
 				{
 					Name = CertManagerModule.WebIssuer,

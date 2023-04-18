@@ -385,6 +385,7 @@ public class VaultModule: ComponentModule
 		return new List<Resource>(2)
 		{
 			ProvisionConfigMap(operatorChart, "vault-defaults", File.ReadAllText("./Modules/Vault/defaults.yaml")),
+			ProvisionConfigMap(operatorChart, "vault-db", File.ReadAllText("./Modules/Vault/db.yaml")),
 			ProvisionConfigMap(operatorChart, "vault-pki", pkiConfig)
 		}.ToImmutableArray();
 	}

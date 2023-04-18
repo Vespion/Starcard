@@ -11,7 +11,7 @@ secrets:
           crl_distribution_points: {0}/crl
           ocsp_servers: {0}/ocsp
       roles:
-        - name: default
+        - name: web
           allowed_domains: {1}
           allow_subdomains: true
           allow_wildcard_certificates: false
@@ -21,3 +21,56 @@ secrets:
           max_ttl: 5h
           generate_lease: false
           require_cn: false
+          key_type: any
+
+        - name: db
+          allowed_domains:
+            - "streaming_replica"
+            - "orleans-rw"
+            - "orleans-rw.storage"
+            - "orleans-rw.storage.svc"
+            - "orleans-rw.storage.svc.cluster.local"
+            - "orleans-ro"
+            - "orleans-ro.storage"
+            - "orleans-ro.storage.svc"
+            - "orleans-ro.storage.svc.cluster.local"
+            - "orleans-r"
+            - "orleans-r.storage"
+            - "orleans-r.storage.svc"
+            - "orleans-r.storage.svc.cluster.local"
+            - "orleans-rw"
+            - "orleans-rw.default"
+            - "orleans-rw.default.svc"
+            - "orleans-rw.default.svc.cluster.local"
+            - "orleans-ro"
+            - "orleans-ro.default"
+            - "orleans-ro.default.svc"
+            - "orleans-ro.default.svc.cluster.local"
+            - "orleans-r"
+            - "orleans-r.default"
+            - "orleans-r.default.svc"
+            - "orleans-r.default.svc.cluster.local"
+            - "cluster-example-rw"
+            - "cluster-example-rw.default"
+            - "cluster-example-rw.default.svc"
+            - "cluster-example-rw.default.svc.cluster.local"
+            - "cluster-example-ro"
+            - "cluster-example-ro.default"
+            - "cluster-example-ro.default.svc"
+            - "cluster-example-ro.default.svc.cluster.local"
+            - "cluster-example-r"
+            - "cluster-example-r.default"
+            - "cluster-example-r.default.svc"
+            - "cluster-example-r.default.svc.cluster.local"
+          allow_bare_domains: true
+          allow_ip_sans: false
+          allow_glob_domains: false
+          allow_subdomains: false
+          allow_wildcard_certificates: false
+          allow_localhost: false
+          allow_any_name: false
+          enforce_hostnames: false
+          max_ttl: 5h
+          generate_lease: false
+          require_cn: false
+          key_type: any

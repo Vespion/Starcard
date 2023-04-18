@@ -27,6 +27,35 @@ public class NetworkModule: ComponentModule
 					["exposedPort"] = config.RequireInt32("Traefik/Ports/Https")
 				}
 			},
+			["logs"] = new Dictionary<string, object>
+			{
+				["general"] = new Dictionary<string, object>
+				{
+					["enabled"] = true,
+					["format"] = "json",
+					["level"] = "DEBUG"
+				},
+				["access"] = new Dictionary<string, object>
+				{
+					["enabled"] = true,
+					["format"] = "json",
+					["fields"] = new Dictionary<string, object>
+					{
+						["general"] = new Dictionary<string, object>
+						{
+							["defaultMode"] = "keep"
+						},
+						["headers"] = new Dictionary<string, object>
+						{
+							["defaultMode"] = "keep",
+							["names"] = new Dictionary<string, string>
+							{
+								["Authorization"] = "redact"
+							}
+						}
+					}
+				}
+			},
 			["priorityClassName"] = "system-cluster-critical",
 			["podDisruptionBudget"] = new Dictionary<string, object>
 			{
@@ -161,6 +190,15 @@ public class NetworkModule: ComponentModule
 				}
 			}
 		};
+		
+		if (config.GetBoolean("Traefik/Db/OpenOrleansPorts") ?? false)
+		{
+			((Dictionary<string, object>)values["ports"])["orleans"] = new Dictionary<string, object>
+			{
+				["exposedPort"] = config.RequireInt32("Traefik/Ports/Orleans"),
+				["port"] = config.RequireInt32("Traefik/Ports/Orleans")
+			};
+		}
 		
 		return CreateHelmRelease("traefik", "traefik", "https://traefik.github.io/charts", NetworkNamespace,
 			"22.1.0", val: values

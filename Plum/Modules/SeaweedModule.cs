@@ -119,6 +119,7 @@ public class SeaweedModule: ComponentModule
 		ProvisionBucket("loki-ruler");
 		ProvisionBucket("loki-admin");
 		ProvisionBucket("loki-index");
+		ProvisionBucket("db-backups");
 	}
 	
 	private void DeployChart(Config config, string name = "seaweed", bool monitoring = true, bool reuseValues = false, params Resource[] deps)
@@ -129,6 +130,8 @@ public class SeaweedModule: ComponentModule
 		{
 			["global"] = new Dictionary<string, object>
 			{
+				["enableReplication"] = false,
+				["enableSecurity"] = false,
 				["monitoring"] = new Dictionary<string, object>
 				{
 					["enabled"] = monitoring
@@ -136,6 +139,8 @@ public class SeaweedModule: ComponentModule
 			},
 			["master"] = new Dictionary<string, object>
 			{
+				["replicas"] = 3,
+				["defaultReplicaPlacement"] = "001",
 				["data"] = new Dictionary<string, object>
 				{
 					["type"] = "persistentVolumeClaim",
@@ -153,12 +158,36 @@ public class SeaweedModule: ComponentModule
 					["className"] = null!,
 					["annotations"] = new Dictionary<string, string>
 					{
-						["traefik.ingress.kubernetes.io/router.entrypoints"] = "web"
+						["traefik.ingress.kubernetes.io/router.entrypoints"] = "websecure"
 					}
 				}
 			},
-			["volume"] = new Dictionary<string, object>
+			["volume"] = new Dictionary<string, Input<object?>>
 			{
+				["replicas"] = 3,
+				["defaultReplicaPlacement"] = "011",
+				["dataCenter"] = config.Get("ClusterType"),
+				["rack"] = "$(cat /var/run/node)",
+				["initContainers"] =
+@"- name: init-node-name
+  image: busybox
+  command: ['/bin/sh', '-c']
+  args: ['echo $NODE_NAME > /var/run/node']
+  env:
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+  volumeMounts:
+  - name: node
+    mountPath: /var/run",
+				["extraVolumeMounts"] = 
+@"- name: node
+  mountPath: /var/run
+  readOnly: true",
+				["extraVolumes"] = 
+@"- name: node
+  emptyDir: {}",
 				["data"] = new Dictionary<string, object>
 				{
 					["type"] = "persistentVolumeClaim",
@@ -178,6 +207,8 @@ public class SeaweedModule: ComponentModule
 			},
 			["filer"] = new Dictionary<string, object>
 			{
+				["replicas"] = 1,
+				["defaultReplicaPlacement"] = "011",
 				["data"] = new Dictionary<string, object>
 				{
 					["type"] = "persistentVolumeClaim",
@@ -195,7 +226,7 @@ public class SeaweedModule: ComponentModule
 					["className"] = null!,
 					["annotations"] = new Dictionary<string, string>
 					{
-						["traefik.ingress.kubernetes.io/router.entrypoints"] = "web"
+						["traefik.ingress.kubernetes.io/router.entrypoints"] = "websecure"
 					}
 				}
 			}
